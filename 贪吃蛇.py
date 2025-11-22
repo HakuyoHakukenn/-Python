@@ -3,6 +3,7 @@ import time
 import random
 
 
+
 window = turtle.Screen()
 window.title("贪吃蛇游戏 - 使用方向键或WASD控制")
 window.bgcolor("black")
