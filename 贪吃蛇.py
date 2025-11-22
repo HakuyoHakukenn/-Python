@@ -152,7 +152,7 @@ while True:
         segments.append(new_segment)
         
         
-        score += 10
+        score += 1
         score_display.clear()
         score_display.write(f"得分: {score}", align="center", font=("Arial", 24, "normal"))
         
