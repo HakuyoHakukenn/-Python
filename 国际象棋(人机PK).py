@@ -6,10 +6,49 @@ import math
 class ChessGame:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("国际象棋AI(游戏制作：白杨博贤)")
+        self.root.title("国际象棋(游戏制作:白杨博贤)")
         self.canvas = tk.Canvas(self.root, width=480, height=480)
         self.canvas.pack()
         
+        self.status_label = tk.Label(self.root, text="准备就绪", font=("Arial", 12), bg="#f0f0f0", width=50)
+        self.status_label.pack(pady=5)
+
+        menubar = tk.Menu(self.root)
+        
+        gamemenu = tk.Menu(menubar, tearoff=0)
+        gamemenu.add_command(label="新游戏: 人机对战 (你执白)", command=lambda: self.reset_game(mode="HvA"))
+        gamemenu.add_command(label="新游戏: AI 互殴 (观战)", command=lambda: self.reset_game(mode="AvA"))
+        menubar.add_cascade(label="开始游戏", menu=gamemenu)
+        
+        diffmenu = tk.Menu(menubar, tearoff=0)
+        diffmenu.add_radiobutton(label="简单 (深度1)", command=lambda: self.set_difficulty(1))
+        diffmenu.add_radiobutton(label="普通 (深度2)", command=lambda: self.set_difficulty(2))
+        diffmenu.add_radiobutton(label="困难 (深度3)", command=lambda: self.set_difficulty(3))
+        menubar.add_cascade(label="AI难度", menu=diffmenu)
+        
+        self.root.config(menu=menubar)
+
+        self.board = []
+        self.has_moved = set()
+        self.board_history = []
+        self.selected_piece = None
+        self.current_player = 'white'
+        self.game_over = False
+        self.ai_thinking = False
+        self.mode = "HvA"
+        self.search_depth = 2
+        
+        self.init_board()
+        self.draw_board()
+        self.canvas.bind("<Button-1>", self.click_handler)
+
+    def set_difficulty(self, depth):
+        self.search_depth = depth
+        diff_name = {1: "简单", 2: "普通", 3: "困难"}[depth]
+        print(f"难度已设置为: {diff_name}")
+        self.status_label.config(text=f"当前难度: {diff_name} (深度{depth})")
+
+    def init_board(self):
         self.board = [
             ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
             ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
@@ -20,15 +59,23 @@ class ChessGame:
             ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
             ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
         ]
-        
         self.has_moved = set()
-        self.selected_piece = None
+        self.board_history = []
+
+    def get_board_signature(self):
+        return str(self.board)
+
+    def reset_game(self, mode):
+        self.init_board()
         self.current_player = 'white'
         self.game_over = False
         self.ai_thinking = False
-        
+        self.mode = mode
+        self.selected_piece = None
+        self.status_label.config(text=f"模式: {'人机对战' if mode=='HvA' else 'AI互殴'} - 白方回合")
         self.draw_board()
-        self.canvas.bind("<Button-1>", self.click_handler)
+        if self.mode == "AvA":
+            self.root.after(500, self.run_ai_turn)
 
     def draw_board(self):
         self.canvas.delete("all")
@@ -75,6 +122,7 @@ class ChessGame:
         return pieces.get(piece, '')
 
     def click_handler(self, event):
+        if self.mode == "AvA": return
         if self.game_over or self.current_player == 'black' or self.ai_thinking:
             return
             
@@ -91,22 +139,42 @@ class ChessGame:
         if self.selected_piece:
             if self.is_valid_move(self.selected_piece, (row, col), strict_check=True):
                 self.make_move(self.selected_piece, (row, col), is_real_move=True)
-                self.current_player = 'black'
-                self.selected_piece = None
-                self.draw_board()
-                
-                status = self.get_game_status('black')
-                if status == 'checkmate':
-                    self.game_over = True
-                    self.canvas.create_text(240, 240, text="你赢了!", font=("Arial", 40), fill="green")
-                elif status == 'stalemate':
-                    self.game_over = True
-                    self.canvas.create_text(240, 240, text="逼和", font=("Arial", 40), fill="blue")
-                else:
-                    self.root.after(100, self.ai_move)
+                self.post_move_process()
             else:
                 self.selected_piece = None
                 self.draw_board()
+
+    def post_move_process(self):
+        opponent = 'black' if self.current_player == 'white' else 'white'
+        self.current_player = opponent
+        self.selected_piece = None
+        self.draw_board()
+        
+        player_name = "你" if (self.mode == "HvA" and self.current_player == 'white') else "AI"
+        color_name = "白方" if self.current_player == 'white' else "黑方"
+        self.status_label.config(text=f"{color_name} ({player_name}) 思考中...")
+        
+        status = self.get_game_status(self.current_player)
+        if status == 'checkmate':
+            self.game_over = True
+            winner = "黑方" if self.current_player == 'white' else "白方"
+            self.status_label.config(text=f"绝杀！{winner} 获胜", fg="red")
+            self.canvas.create_text(240, 240, text=f"{winner}获胜", font=("Arial", 40), fill="red")
+        elif status == 'stalemate':
+            self.game_over = True
+            self.status_label.config(text="逼和 (平局)", fg="blue")
+            self.canvas.create_text(240, 240, text="逼和", font=("Arial", 40), fill="blue")
+        else:
+            if self.mode == "HvA" and self.current_player == 'black':
+                self.root.after(100, self.run_ai_turn)
+            elif self.mode == "AvA":
+                self.root.after(200, self.run_ai_turn)
+
+    def run_ai_turn(self):
+        if self.game_over: return
+        ai_calculate_move(self)
+        if not self.game_over:
+            self.post_move_process()
 
     def find_king(self, player_color):
         target = 'K' if player_color == 'white' else 'k'
@@ -272,9 +340,17 @@ class ChessGame:
         
         if is_real_move:
             self.has_moved.add((r1, c1))
+            
+            self.board_history.append(self.get_board_signature())
+            if len(self.board_history) > 8:
+                self.board_history.pop(0)
+                
             if piece == 'P' and r2 == 0:
-                choice = simpledialog.askstring("升变", "Q, R, N, B?")
-                self.board[r2][c2] = choice.upper() if choice and choice.upper() in 'RNB' else 'Q'
+                if self.mode == "HvA" and self.current_player == 'white':
+                    choice = simpledialog.askstring("升变", "Q, R, N, B?")
+                    self.board[r2][c2] = choice.upper() if choice and choice.upper() in 'RNB' else 'Q'
+                else:
+                    self.board[r2][c2] = 'Q'
             elif piece == 'p' and r2 == 7:
                 self.board[r2][c2] = 'q'
 
@@ -316,6 +392,8 @@ pst_generic = [
 
 def evaluate_board(game):
     score = 0
+    score += random.randint(-5, 5) 
+    
     for r in range(8):
         for c in range(8):
             piece = game.board[r][c]
@@ -326,12 +404,13 @@ def evaluate_board(game):
             else: score -= (val + pos_val)
     return score
 
-def get_ai_moves(game):
+def get_moves(game, player_color):
     moves = []
     for r in range(8):
         for c in range(8):
             p = game.board[r][c]
-            if p and p.islower():
+            if not p: continue
+            if (player_color == 'white' and p.isupper()) or (player_color == 'black' and p.islower()):
                 for tr in range(8):
                     for tc in range(8):
                         if game.is_valid_move((r, c), (tr, tc), strict_check=True):
@@ -339,6 +418,7 @@ def get_ai_moves(game):
                             target = game.board[tr][tc]
                             if target: priority = PIECE_VALUES.get(target.lower(), 0)
                             moves.append((priority, (r, c), (tr, tc)))
+    random.shuffle(moves)
     moves.sort(key=lambda x: x[0], reverse=True)
     return [ (m[1], m[2]) for m in moves ]
 
@@ -353,35 +433,21 @@ def minimax(game, depth, alpha, beta, is_maximizing):
     if depth == 0:
         return evaluate_board(game)
 
+    moves = get_moves(game, current_turn)
+
     if is_maximizing:
         max_eval = -math.inf
-        moves = get_ai_moves(game)
         for start, end in moves:
             saved_board = [row[:] for row in game.board]
             game.make_move(start, end, is_real_move=False)
-            
             eval = minimax(game, depth - 1, alpha, beta, False)
-            
             game.board = saved_board
-            
             max_eval = max(max_eval, eval)
             alpha = max(alpha, eval)
             if beta <= alpha: break
         return max_eval
     else:
         min_eval = math.inf
-        moves = []
-        for r in range(8):
-            for c in range(8):
-                p = game.board[r][c]
-                if p and p.isupper():
-                    for tr in range(8):
-                        for tc in range(8):
-                            if game.is_valid_move((r,c), (tr,tc), strict_check=True):
-                                moves.append(((r,c), (tr,tc)))
-        
-        moves.sort(key=lambda m: PIECE_VALUES.get(game.board[m[1][0]][m[1][1]].lower(), 0) if game.board[m[1][0]][m[1][1]] else 0, reverse=True)
-
         for start, end in moves:
             saved_board = [row[:] for row in game.board]
             game.make_move(start, end, is_real_move=False)
@@ -392,52 +458,58 @@ def minimax(game, depth, alpha, beta, is_maximizing):
             if beta <= alpha: break
         return min_eval
 
-def ai_entry(self):
+def ai_calculate_move(self):
     self.ai_thinking = True
     self.root.update()
     
-    depth = 2
-    
+    depth = self.search_depth
+    is_black = (self.current_player == 'black')
     best_move = None
-    best_value = -math.inf
+    best_value = -math.inf if is_black else math.inf
+    
     alpha = -math.inf
     beta = math.inf
     
-    moves = get_ai_moves(self)
+    moves = get_moves(self, self.current_player)
     
+    print(f"{self.current_player} AI 思考中...")
     for start, end in moves:
         saved_board = [row[:] for row in self.board]
         self.make_move(start, end, is_real_move=False)
         
-        val = minimax(self, depth - 1, alpha, beta, False)
+        current_sig = self.get_board_signature()
+        repetition_penalty = 0
+        if current_sig in self.board_history:
+            print(f"检测到重复局面倾向: {start}->{end}")
+            repetition_penalty = -500 if is_black else 500
         
+        val = minimax(self, depth - 1, alpha, beta, not is_black)
+        val += repetition_penalty
+
         self.board = saved_board
         
         print(f"Move {start}->{end}: {val}")
         
-        if val > best_value:
-            best_value = val
-            best_move = (start, end)
+        if is_black:
+            if val > best_value:
+                best_value = val
+                best_move = (start, end)
             alpha = max(alpha, val)
+        else:
+            if val < best_value:
+                best_value = val
+                best_move = (start, end)
+            beta = min(beta, val)
             
     if best_move:
         self.make_move(best_move[0], best_move[1], is_real_move=True)
-        self.current_player = 'white'
-        
-        status = self.get_game_status('white')
-        if status == 'checkmate':
-            self.game_over = True
-            self.draw_board()
-            self.canvas.create_text(240, 240, text="你输了!", font=("Arial", 40), fill="red")
-        elif status == 'stalemate':
-            self.game_over = True
-            self.canvas.create_text(240, 240, text="逼和", font=("Arial", 40), fill="blue")
-    
-    self.ai_thinking = False
-    if not self.game_over:
-        self.draw_board()
+    else:
+        if moves:
+            rand_move = random.choice(moves)
+            self.make_move(rand_move[0], rand_move[1], is_real_move=True)
 
-ChessGame.ai_move = ai_entry
+    self.ai_thinking = False
+    self.draw_board()
 
 if __name__ == "__main__":
     game = ChessGame()
