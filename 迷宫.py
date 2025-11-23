@@ -116,6 +116,7 @@ def maze_game():
             terrain_change_counter = 0
     
     print(f"最终分数: {score}")
+    
 
 if __name__ == "__main__":
     maze_game()
