@@ -91,6 +91,7 @@ def maze_game():
         print("移动: w(上), s(下), a(左), d(右)")
         print("目标: 到达终点(G)，避开敌人(E)")
         print("注意: 地形会随机变化!")
+        print("游戏制作：白杨博贤")
         
         if player_pos == enemy_pos:
             print("被敌人抓住了！游戏结束！")
